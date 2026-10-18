@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StudyQuest - Interactive Quest Log</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #ffffff;
+            margin: 0;
+            padding: 30px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #16213e;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        h1 {
+            color: #00fff0;
+            text-align: center;
+        }
+
+        .dashboard {
+            display: flex;
+            justify-content: space-around;
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        .upload-card {
+            border: 2px dashed #00fff0;
+            padding: 20px;
+            text-align: center;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        input[type="file"] {
+            margin: 10px 0;
+        }
+
+        button {
+            background-color: #e94560;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background-color: #ff6b81;
+        }
+
+        .task-card {
+            background: #0f3460;
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: 0.3s;
+        }
+
+        .task-card.completed {
+            opacity: 0.5;
+            text-decoration: line-through;
+        }
+
+        .xp-badge {
+            background: #00fff0;
+            color: #1a1a2e;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>⚔️ StudyQuest Dashboard ⚔️</h1>
+
+        <div class="dashboard">
+            <div>Total Course XP: <span id="totalXp">0</span></div>
+            <div>XP Earned: <span id="earnedXp">0</span></div>
+            <div>XP Remaining: <span id="remainingXp">0</span></div>
+        </div>
+
+        <div class="upload-card">
+            <h3>Upload Course Syllabus</h3>
+            <input type="file" id="syllabusFile" accept=".pdf,.png,.jpg,.jpeg">
+            <br>
+            <button onclick="uploadSyllabus()">Generate Quests ✨</button>
+        </div>
+
+        <div id="status" style="text-align: center; color: #00fff0; margin-bottom: 15px;"></div>
+        <div id="questList"></div>
+    </div>
+
+    <script>
+        let totalCourseXp = 0;
+        let earnedXp = 0;
+
+        async function uploadSyllabus() {
+            const fileInput = document.getElementById('syllabusFile');
+            const statusDiv = document.getElementById('status');
+            const questList = document.getElementById('questList');
+
+            if (!fileInput.files[0]) {
+                alert("Please select a syllabus file first!");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            statusDiv.innerText = "🔮 Gemini is analyzing your syllabus...";
+            questList.innerHTML = "";
+            totalCourseXp = 0;
+            earnedXp = 0;
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/parse-syllabus', { method: 'POST', body: formData });
+                const data = await response.json();
+                statusDiv.innerText = "✅ Quests generated successfully!";
+
+                let text = data.schedule.replace(/```json|```/g, '').trim();
+                const tasks = JSON.parse(text);
+
+                // Calculate total XP based on rules: Exam = 100 XP, Homework/Benchmark = 50 XP
+                tasks.forEach(task => {
+                    if (task.type && task.type.toLowerCase().includes('exam')) {
+                        task.points = 100;
+                    } else {
+                        task.points = 50;
+                    }
+                    totalCourseXp += task.points;
+                });
+
+                updateDashboard();
+
+                tasks.forEach((task, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'task-card';
+                    card.id = `task-${index}`;
+                    card.innerHTML = `
+                <div>
+                    <input type="checkbox" onclick="toggleTask(${index}, ${task.points})" id="check-${index}">
+                    <strong>[${task.type || 'Quest'}] ${task.title}</strong><br>
+                    <small style="margin-left: 20px;">📅 Due: ${task.due_date || 'N/A'}</small>
+                </div>
+                <span class="xp-badge">+${task.points} XP</span>
+            `;
+                    questList.appendChild(card);
+                });
+
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerText = "❌ Error processing syllabus.";
+            }
+        }
+
+        function toggleTask(index, points) {
+            const checkbox = document.getElementById(`check-${index}`);
+            const card = document.getElementById(`task-${index}`);
+
+            if (checkbox.checked) {
+                // Confirmation prompt before claiming points
+                let confirmComplete = confirm("Did you finish and submit this assignment?");
+                if (confirmComplete) {
+                    earnedXp += points;
+                    card.classList.add('completed');
+                } else {
+                    checkbox.checked = false; // Uncheck if they cancel
+                }
+            } else {
+                earnedXp -= points;
+                card.classList.remove('completed');
+            }
+            updateDashboard();
+        }
+
+        function updateDashboard() {
+            document.getElementById('totalXp').innerText = totalCourseXp;
+            document.getElementById('earnedXp').innerText = earnedXp;
+            document.getElementById('remainingXp').innerText = totalCourseXp - earnedXp;
+        }
+    </script>
+
+</body>
+
+</html>
